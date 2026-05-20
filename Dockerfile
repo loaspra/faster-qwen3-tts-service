@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.2-runtime-ubuntu24.04
+FROM docker.io/nvidia/cuda:13.0.2-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \

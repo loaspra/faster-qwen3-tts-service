@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+dist/
+build/
+
+# Local outputs / scratch
+out.wav
+metrics.json
+*.log
+
+# Secrets
+k8s/secret-hf-token.yaml

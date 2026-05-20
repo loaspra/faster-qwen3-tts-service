@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-tts-spanish-service
+  namespace: letta-agent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qwen3-tts-spanish-service
+  template:
+    metadata:
+      labels:
+        app: qwen3-tts-spanish-service
+    spec:
+      runtimeClassName: nvidia
+      containers:
+        - name: app
+          image: ghcr.io/loaspra/faster-qwen3-tts:spanish-v3-0.6b-refvoice
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-lc"]
+          args:
+            - >-
+              set -eu;
+              python3 examples/openai_server.py
+              --host 0.0.0.0
+              --port 8880
+              --device cuda
+              --model "${QWEN_TTS_MODEL}"
+              --ref-audio "${QWEN_TTS_REF_AUDIO}"
+              --ref-text "${QWEN_TTS_REF_TEXT}"
+              --language "${QWEN_TTS_LANGUAGE}"
+          envFrom:
+            - configMapRef:
+                name: qwen3-tts-spanish-config
+            - secretRef:
+                name: hf-token
+          ports:
+            - containerPort: 8880
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 1
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 5Gi
+              nvidia.com/gpu: "1"

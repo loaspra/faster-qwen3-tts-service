@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qwen3-tts-spanish-config
+  namespace: letta-agent
+data:
+  QWEN_TTS_MODEL: Qwen/Qwen3-TTS-12Hz-0.6B-Base
+  QWEN_TTS_LANGUAGE: Spanish
+  QWEN_TTS_CHUNK_SIZE: "4"
+  QWEN_TTS_REF_AUDIO: /app/ref_audio.wav
+  QWEN_TTS_REF_TEXT: >-
+    Si de casualidad cambia el clima, ¿nos podrías mandar un mensaje al celular porfavor?

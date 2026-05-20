@@ -1,0 +1,3 @@
+[submodule "faster-qwen3-tts"]
+	path = faster-qwen3-tts
+	url = https://github.com/andimarafioti/faster-qwen3-tts

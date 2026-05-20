@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: faster-qwen3-tts-service
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: letta-agent
+  source:
+    repoURL: https://github.com/loaspra/faster-qwen3-tts-service
+    targetRevision: main
+    path: k8s
+    directory:
+      exclude: argocd-application.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

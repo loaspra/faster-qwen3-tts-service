@@ -125,55 +125,110 @@ def _log_tts(event: str, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# Text segmentation (server-side batching)
+# Text sanitization + segmentation (server-side batching)
 # ---------------------------------------------------------------------------
 
-_SEGMENT_MIN_CHARS = 80
-_SEGMENT_MAX_CHARS = 400
+# Max chars per segment after markdown stripping.
+# Model has QWEN_TTS_MAX_SEQ_LEN=512 tokens; ~320 clean chars of Spanish text
+# is a safe upper bound. We use 300 to leave headroom.
+_SEGMENT_MAX_CHARS = 300
+_SEGMENT_MIN_CHARS = 120  # merge paragraphs shorter than this into adjacent ones
+
+
+def sanitize_for_tts(text: str) -> str:
+    """Strip markdown and normalise whitespace before synthesis.
+
+    Removes constructs that produce bad/slow TTS output:
+      - Bold/italic markers (**text**, *text*, __text__, _text_)
+      - Code fences and inline code (`code`, ```blocks```)
+      - Setext / ATX headers (### Header)
+      - Horizontal rules (--- / ***)
+      - Bullet/numbered list markers at line start (-, *, 1., 2.)
+      - HTML tags
+      - Excess punctuation runs (---, ...) normalised to single dash / ellipsis
+      - Repeated newlines collapsed to double
+    """
+    # Remove code fences (``` ... ```)
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    # Remove inline code
+    text = re.sub(r"`[^`]*`", "", text)
+    # Remove ATX headers (## Title -> Title)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Remove bold/italic: ***text***, **text**, __text__, *text*, _text_
+    text = re.sub(r"\*{1,3}([^*\n]+?)\*{1,3}", r"\1", text)
+    text = re.sub(r"_{1,2}([^_\n]+?)_{1,2}", r"\1", text)
+    # Remove horizontal rules
+    text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+    # Remove leading bullet/list markers (-, *, +, 1., 2. …)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d+[.)]\s+", "", text, flags=re.MULTILINE)
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Normalise em-dashes / triple dashes
+    text = re.sub(r"-{2,}", " - ", text)
+    # Collapse 3+ dots to ellipsis word pause
+    text = re.sub(r"\.{3,}", "...", text)
+    # Collapse excess blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Strip trailing spaces per line
+    text = "\n".join(line.rstrip() for line in text.splitlines())
+    return text.strip()
 
 
 def segment_text(text: str) -> list[str]:
-    """Split text into synthesis-friendly segments.
+    """Split sanitised text into synthesis-friendly segments.
 
-    Strategy (per user preference):
-      1. Split on double newlines first.
-      2. If any resulting block is still long, split on single newlines.
-      3. Merge short fragments forward so each segment >= _SEGMENT_MIN_CHARS.
-      4. Cap segments at _SEGMENT_MAX_CHARS by splitting on sentence boundaries.
+    Strategy:
+      1. Sanitise markdown first so length calculations are on clean text.
+      2. Split ONLY on double newlines (never single — that causes over-splitting
+         of markdown lists into dozens of tiny segments).
+      3. If a paragraph still exceeds _SEGMENT_MAX_CHARS, split on sentence
+         boundaries (. ! ? …) as a last resort.
+      4. Merge short fragments forward so each segment >= _SEGMENT_MIN_CHARS,
+         aiming for as few GPU inference calls as possible.
     """
-    text = text.strip()
+    text = sanitize_for_tts(text)
     if not text:
         return []
 
-    # Phase 1: split on double newlines
-    blocks = [b.strip() for b in re.split(r"\n\n+", text) if b.strip()]
+    # Phase 1: split only on double (or more) newlines
+    paragraphs = [b.strip() for b in re.split(r"\n\n+", text) if b.strip()]
 
-    # Phase 2: split remaining large blocks on single newlines
-    expanded: list[str] = []
-    for block in blocks:
-        if len(block) > _SEGMENT_MAX_CHARS:
-            sub_blocks = [s.strip() for s in block.split("\n") if s.strip()]
-            expanded.extend(sub_blocks)
+    # Phase 2: split oversized paragraphs on sentence boundaries only
+    split_on_sentences: list[str] = []
+    for para in paragraphs:
+        if len(para) <= _SEGMENT_MAX_CHARS:
+            split_on_sentences.append(para)
         else:
-            expanded.append(block)
+            # Split on sentence-ending punctuation followed by whitespace
+            sentences = re.split(r"(?<=[.!?…])\s+", para)
+            # Re-merge consecutive short sentences to avoid tiny fragments
+            current = ""
+            for sent in sentences:
+                sent = sent.strip()
+                if not sent:
+                    continue
+                if current and len(current) + 1 + len(sent) <= _SEGMENT_MAX_CHARS:
+                    current = f"{current} {sent}"
+                else:
+                    if current:
+                        split_on_sentences.append(current)
+                    current = sent
+            if current:
+                split_on_sentences.append(current)
 
-    # Phase 3: further split any block still over max on sentence boundaries
-    split_further: list[str] = []
-    for block in expanded:
-        if len(block) <= _SEGMENT_MAX_CHARS:
-            split_further.append(block)
-        else:
-            # Split on sentence-ending punctuation followed by space
-            sentences = re.split(r"(?<=[.!?…])\s+", block)
-            split_further.extend(s.strip() for s in sentences if s.strip())
-
-    # Phase 4: merge short fragments forward
+    # Phase 3: merge short fragments to minimise segment count.
+    # A segment is merged into the previous one if EITHER the previous OR the
+    # current segment is below the minimum threshold and the combined length
+    # fits within the model limit.
     merged: list[str] = []
-    for segment in split_further:
-        if merged and len(merged[-1]) < _SEGMENT_MIN_CHARS:
-            merged[-1] = f"{merged[-1]} {segment}"
-        else:
-            merged.append(segment)
+    for seg in split_on_sentences:
+        if merged and (len(merged[-1]) < _SEGMENT_MIN_CHARS or len(seg) < _SEGMENT_MIN_CHARS):
+            candidate = f"{merged[-1]} {seg}"
+            if len(candidate) <= _SEGMENT_MAX_CHARS:
+                merged[-1] = candidate
+                continue
+        merged.append(seg)
 
     return merged if merged else [text]
 

@@ -13,5 +13,8 @@ out.wav
 metrics.json
 *.log
 
+# Patched server file is tracked intentionally (do not ignore)
+# openai_server.py is committed at repo root as a Dockerfile patch
+
 # Secrets
 k8s/secret-hf-token.yaml

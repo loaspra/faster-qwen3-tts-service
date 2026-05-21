@@ -17,6 +17,8 @@ WORKDIR /app
 
 COPY faster-qwen3-tts /app
 COPY ref_audio.wav /app/ref_audio.wav
+# Patch openai_server.py with max_seq_len support and empty_cache after warmup
+COPY openai_server.py /app/examples/openai_server.py
 
 RUN python3 -m pip install --break-system-packages --no-cache-dir .
 

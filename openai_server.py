@@ -82,6 +82,12 @@ SAMPLE_RATE = 24000  # updated once the model loads
 _model_lock = threading.Lock()  # prevent concurrent GPU inference
 MAX_LOG_TEXT_CHARS = 1000
 
+# Post-speech termination safeguard: biases the talker toward sampling EOS when
+# it is done, eliminating the long hallucinated noise tails that occur when EOS
+# is otherwise missed. ~2.0 catches the failure case without truncating real
+# speech. Tunable via env (QWEN_TTS_EOS_BIAS=0 restores old behaviour).
+EOS_BIAS = float(os.environ.get("QWEN_TTS_EOS_BIAS", "2.0"))
+
 # ---------------------------------------------------------------------------
 # Job registry
 # ---------------------------------------------------------------------------
@@ -386,6 +392,7 @@ async def _collect_segment_pcm_f32(
                     ref_text=voice_cfg.get("ref_text", ""),
                     chunk_size=voice_cfg.get("chunk_size", 12),
                     non_streaming_mode=False,
+                    eos_bias=EOS_BIAS,
                 ):
                     q.put(_to_pcm_f32le(chunk))
         except Exception as exc:
@@ -541,6 +548,7 @@ async def _stream_chunks(
                     ref_text=voice_cfg.get("ref_text", ""),
                     chunk_size=voice_cfg.get("chunk_size", 12),
                     non_streaming_mode=False,
+                    eos_bias=EOS_BIAS,
                 ):
                     q.put((chunk, timing))
         except Exception as exc:
@@ -580,6 +588,7 @@ async def _stream_chunks_f32(
                     ref_text=voice_cfg.get("ref_text", ""),
                     chunk_size=voice_cfg.get("chunk_size", 12),
                     non_streaming_mode=False,
+                    eos_bias=EOS_BIAS,
                 ):
                     q.put((chunk, timing))
         except Exception as exc:

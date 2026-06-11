@@ -9,4 +9,4 @@ resources:
 # CI rewrites this tag on every release.
 images:
   - name: ghcr.io/loaspra/faster-qwen3-tts
-    newTag: spanish-v7-eosfix
+    newTag: sha-2bd2f0c1

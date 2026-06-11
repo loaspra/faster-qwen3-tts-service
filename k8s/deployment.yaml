@@ -18,8 +18,8 @@ spec:
       runtimeClassName: nvidia
       containers:
         - name: app
-          image: ghcr.io/loaspra/faster-qwen3-tts:spanish-v7-eosfix
-          imagePullPolicy: Always
+          image: ghcr.io/loaspra/faster-qwen3-tts
+          imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-lc"]
           args:
             - >-

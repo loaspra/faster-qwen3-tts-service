@@ -16,6 +16,8 @@ spec:
         app: qwen3-tts-spanish-service
     spec:
       runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: app
           image: ghcr.io/loaspra/faster-qwen3-tts
